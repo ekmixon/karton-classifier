@@ -17,10 +17,14 @@ def classify_openxml(content: bytes) -> Optional[str]:
     extensions = {"docx": "word", "pptx": "ppt", "xlsx": "xl"}
     filenames = [x.filename for x in zipfile.filelist]
 
-    for ext, file_prefix in extensions.items():
-        if any(x.startswith(file_prefix) for x in filenames):
-            return ext
-    return None
+    return next(
+        (
+            ext
+            for ext, file_prefix in extensions.items()
+            if any(x.startswith(file_prefix) for x in filenames)
+        ),
+        None,
+    )
 
 
 def get_tag(classification: Dict[str, str]) -> str:
@@ -32,9 +36,7 @@ def get_tag(classification: Dict[str, str]) -> str:
         sample_type += f":{classification['platform']}"
 
     if "extension" in classification:
-        # Add extension (if not empty)
-        extension = classification["extension"]
-        if extension:
+        if extension := classification["extension"]:
             sample_type += f":{classification['extension']}"
 
     # Add misc: if headers doesn't have platform nor extension
@@ -238,7 +240,7 @@ class Classifier(Karton):
                     "platform": "win32",
                 }
             )
-            if extension[:3] in office_extensions.keys():
+            if extension[:3] in office_extensions:
                 sample_type["extension"] = extension
             else:
                 sample_type["extension"] = "doc"
@@ -248,8 +250,13 @@ class Classifier(Karton):
         for ext, typepart in office_extensions.items():
             if magic.startswith(typepart):
                 sample_type.update(
-                    {"kind": "document", "platform": "win32", "extension": ext + "x"}
+                    {
+                        "kind": "document",
+                        "platform": "win32",
+                        "extension": f"{ext}x",
+                    }
                 )
+
                 return sample_type
 
         # Check RTF by extension
@@ -260,7 +267,7 @@ class Classifier(Karton):
             return sample_type
 
         # Finally check document type only by extension
-        if extension[:3] in office_extensions.keys():
+        if extension[:3] in office_extensions:
             sample_type.update(
                 {"kind": "document", "platform": "win32", "extension": extension}
             )
@@ -323,28 +330,29 @@ class Classifier(Karton):
             "zlib",
         ]
         for ext in archive_extensions:
-            if ext in archive_assoc:
-                if any(magic.startswith(x) for x in archive_assoc[ext]):
-                    sample_type.update({"kind": "archive", "extension": ext})
-                    return sample_type
+            if ext in archive_assoc and any(
+                magic.startswith(x) for x in archive_assoc[ext]
+            ):
+                sample_type.update({"kind": "archive", "extension": ext})
+                return sample_type
         if extension in archive_extensions:
             sample_type.update({"kind": "archive", "extension": extension})
             return sample_type
 
         # E-mail
         email_assoc = {"msg": "Microsoft Outlook Message", "eml": "multipart/mixed"}
-        for ext in email_assoc.keys():
+        for ext in email_assoc:
             if email_assoc[ext] in magic:
                 sample_type.update({"kind": "archive", "extension": ext})
                 return sample_type
 
-        if extension in email_assoc.keys():
+        if extension in email_assoc:
             sample_type.update({"kind": "archive", "extension": extension})
             return sample_type
 
         # HTML
         if magic.startswith("HTML document"):
-            sample_type.update({"kind": "html"})
+            sample_type["kind"] = "html"
             return sample_type
 
         # Linux scripts
@@ -422,7 +430,7 @@ class Classifier(Karton):
                     len([True for keyword in html_keywords if keyword in partial_str])
                     >= 2
                 ):
-                    sample_type.update({"kind": "html"})
+                    sample_type["kind"] = "html"
                     return sample_type
 
                 if (
@@ -462,32 +470,16 @@ class Classifier(Karton):
                     )
                     return sample_type
                 if magic.startswith("ASCII"):
-                    sample_type.update(
-                        {
-                            "kind": "ascii",
-                        }
-                    )
+                    sample_type["kind"] = "ascii"
                     return sample_type
                 if magic.startswith("ISO-8859"):
-                    sample_type.update(
-                        {
-                            "kind": "iso-8859-1",
-                        }
-                    )
+                    sample_type["kind"] = "iso-8859-1"
                     return sample_type
                 if magic.startswith("UTF-8"):
-                    sample_type.update(
-                        {
-                            "kind": "utf-8",
-                        }
-                    )
+                    sample_type["kind"] = "utf-8"
                     return sample_type
                 if magic.startswith("PGP"):
-                    sample_type.update(
-                        {
-                            "kind": "pgp",
-                        }
-                    )
+                    sample_type["kind"] = "pgp"
                     return sample_type
         except Exception as e:
             self.log.exception(e)
